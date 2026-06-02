@@ -202,8 +202,20 @@ function psCreateKey(path) {
 // --- enumKeys via reg.exe (10-20× plus rapide que PowerShell cold start) ---
 
 function regPath(p) {
-    // reg.exe accepte HKLM\... directement, donc on garde tel quel.
-    return String(p).replace(/\//g, '\\');
+    // MeshAgent execFile passe les args bizarrement à reg.exe ; les formes
+    // courtes (HKLM, HKCU, …) déclenchent "Argument ou option non valide".
+    // On force la forme longue (HKEY_LOCAL_MACHINE, …).
+    var s = String(p).replace(/\//g, '\\');
+    var map = {
+        HKLM: 'HKEY_LOCAL_MACHINE',
+        HKCU: 'HKEY_CURRENT_USER',
+        HKCR: 'HKEY_CLASSES_ROOT',
+        HKU:  'HKEY_USERS',
+        HKCC: 'HKEY_CURRENT_CONFIG',
+    };
+    var m = s.match(/^([A-Z]+)(\\.*)?$/);
+    if (m && map[m[1]]) s = map[m[1]] + (m[2] || '');
+    return s;
 }
 
 function runRegEnumKeys(args) {
