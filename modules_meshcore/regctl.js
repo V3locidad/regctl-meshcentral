@@ -204,13 +204,25 @@ function psCreateKey(path) {
 function runPs(args, script) {
     var dispatchId = args.dispatchId;
     var cp = require('child_process');
+    var fs = require('fs');
     var windir = process.env.windir || process.env.WINDIR || 'C:\\Windows';
     var psExe = windir + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-    var psArgs = ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '-'];
+    // Écrit le script dans un .ps1 temporaire puis lance via -File.
+    // -EncodedCommand serait plus pur mais MeshAgent (Duktape) n'expose pas
+    // Buffer.from(..., 'utf16le').toString('base64') de façon fiable.
+    var tmpDir = process.env.TEMP || 'C:\\Windows\\Temp';
+    var psPath = tmpDir + '\\regctl_' + Date.now() + '_' + Math.floor(Math.random() * 1e9) + '.ps1';
+    try { fs.writeFileSync(psPath, script); }
+    catch (e) {
+        reply({ pluginaction: 'result', dispatchId: dispatchId, ok: false, error: 'write ps1: ' + e });
+        return;
+    }
+    var psArgs = ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', psPath];
     var child;
     try {
         child = cp.execFile(psExe, psArgs);
     } catch (e) {
+        try { fs.unlinkSync(psPath); } catch (e2) {}
         reply({ pluginaction: 'result', dispatchId: dispatchId, ok: false, error: 'spawn: ' + e });
         return;
     }
@@ -222,16 +234,15 @@ function runPs(args, script) {
     var finished = false;
     child.on('exit', function (code) {
         if (finished) return; finished = true;
+        try { fs.unlinkSync(psPath); } catch (e) {}
         finalize(code);
     });
     setTimeout(function () {
         if (finished) return; finished = true;
         try { child.kill(); } catch (e) {}
+        try { fs.unlinkSync(psPath); } catch (e) {}
         reply({ pluginaction: 'result', dispatchId: dispatchId, ok: false, error: 'timeout' });
     }, 60 * 1000);
-    try { child.stdin.write(script + '\r\n'); child.stdin.end(); } catch (e) {
-        dbg('stdin write: ' + e);
-    }
 
     function finalize(code) {
         var line = stdout.trim();
