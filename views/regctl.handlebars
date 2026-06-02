@@ -68,6 +68,7 @@
   <span id="spinner">⟳</span>
   <span id="batchTag" class="batchTag" style="display:none"></span>
   <div class="grow"></div>
+  <button id="quickActionBtn" title="Créer/écrire/supprimer à un chemin libre, sans naviguer">⚡ Action rapide</button>
   <button id="refreshAgents" title="Recharger la liste des postes">↻ Postes</button>
   <button id="refreshTree" title="Recharger l'arbre">↻ Arbre</button>
 </header>
@@ -479,6 +480,78 @@ function deleteCurrentKey() {
   }, 'Supprimer la clé ' + selectedPath);
 }
 
+function openQuickAction() {
+  var nIds = targetNodes().length;
+  if (!nIds) return alert('Coche au moins un poste (ou click sur un poste actif).');
+  var typeOpts = TYPES.map(function (t) { return '<option>' + t + '</option>'; }).join('');
+  var bg = showModal([
+    '<h3>Action rapide — ' + nIds + ' poste' + (nIds > 1 ? 's' : '') + '</h3>',
+    '<label>Opération</label>',
+    '<select id="qaOp">',
+    '  <option value="createKey">Créer une clé</option>',
+    '  <option value="deleteKey">Supprimer une clé (récursif)</option>',
+    '  <option value="writeValue">Écrire une valeur</option>',
+    '  <option value="deleteValue">Supprimer une valeur</option>',
+    '</select>',
+    '<label>Chemin de clé</label>',
+    '<input id="qaPath" placeholder="ex: HKLM\\Software\\MonAppli">',
+    '<div id="qaValBlock">',
+    '  <label>Nom de la valeur</label>',
+    '  <input id="qaName" placeholder="(vide = valeur par défaut)">',
+    '  <div id="qaTypeBlock">',
+    '    <label>Type</label>',
+    '    <select id="qaType">' + typeOpts + '</select>',
+    '    <label id="qaDataLbl">Donnée</label>',
+    '    <textarea id="qaData"></textarea>',
+    '  </div>',
+    '</div>',
+    '<div class="actions">',
+    '  <button id="qaCancel">Annuler</button>',
+    '  <button id="qaRun">Exécuter</button>',
+    '</div>',
+  ].join(''));
+  var op = bg.querySelector('#qaOp');
+  var valBlock = bg.querySelector('#qaValBlock');
+  var typeBlock = bg.querySelector('#qaTypeBlock');
+  var refresh = function () {
+    var v = op.value;
+    valBlock.style.display = (v === 'createKey' || v === 'deleteKey') ? 'none' : '';
+    typeBlock.style.display = (v === 'writeValue') ? '' : 'none';
+  };
+  var qaType = bg.querySelector('#qaType');
+  var qaLbl = bg.querySelector('#qaDataLbl');
+  var updateHint = function () {
+    var t = qaType.value;
+    if (t === 'DWord' || t === 'QWord') qaLbl.textContent = 'Donnée (entier)';
+    else if (t === 'Binary') qaLbl.textContent = 'Donnée (hexa, ex: DE AD BE EF)';
+    else if (t === 'MultiString') qaLbl.textContent = 'Donnée (une ligne = une entrée)';
+    else qaLbl.textContent = 'Donnée';
+  };
+  op.onchange = refresh; qaType.onchange = updateHint; refresh(); updateHint();
+  bg.querySelector('#qaCancel').onclick = function () { closeModal(bg); };
+  bg.querySelector('#qaRun').onclick = function () {
+    var action = op.value;
+    var path = bg.querySelector('#qaPath').value.trim();
+    if (!path) return alert('Chemin requis.');
+    var name = bg.querySelector('#qaName').value;
+    var type = qaType.value;
+    var data = bg.querySelector('#qaData').value;
+    var label = ({
+      createKey: 'Créer ' + path,
+      deleteKey: 'Supprimer ' + path,
+      writeValue: 'Écrire ' + (name || '(défaut)') + ' dans ' + path,
+      deleteValue: 'Supprimer ' + (name || '(défaut)') + ' de ' + path,
+    })[action];
+    closeModal(bg);
+    batchDispatch(action, function (nodeId) {
+      var body = { nodeId: nodeId, path: path };
+      if (action === 'writeValue') { body.name = name; body.type = type; body.data = data; }
+      else if (action === 'deleteValue') { body.name = name; }
+      return body;
+    }, label);
+  };
+}
+$('quickActionBtn').onclick = openQuickAction;
 $('refreshTree').onclick = function () { if (activeNodeId) renderRoots(); };
 $('newValBtn').onclick = function () { if (selectedPath) editValue('', null); };
 $('newKeyBtn').onclick = function () { if (selectedPath) createKey(); };
