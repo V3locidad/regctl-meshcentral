@@ -33,7 +33,7 @@ function consoleaction(args, rights, sessionid, parent) {
     var fnname = args.pluginaction || (args._ && args._[1]);
     try {
         switch (fnname) {
-            case 'enumKeys':    return runPs(args, psEnumKeys(args.path));
+            case 'enumKeys':    return runRegEnumKeys(args);
             case 'enumValues':  return runPs(args, psEnumValues(args.path));
             case 'readValue':   return runPs(args, psReadValue(args.path, args.name));
             case 'writeValue':  return runPs(args, psWriteValue(args.path, args.name, args.type, args.data));
@@ -197,6 +197,80 @@ function psCreateKey(path) {
         'New-Item -Path $p -Force | Out-Null',
         'Write-Output (@{ ok = $true } | ConvertTo-Json -Compress)',
     ].join('\r\n'));
+}
+
+// --- enumKeys via reg.exe (10-20× plus rapide que PowerShell cold start) ---
+
+function regPath(p) {
+    // reg.exe accepte HKLM\... directement, donc on garde tel quel.
+    return String(p).replace(/\//g, '\\');
+}
+
+function runRegEnumKeys(args) {
+    var dispatchId = args.dispatchId;
+    var cp = require('child_process');
+    var windir = process.env.windir || process.env.WINDIR || 'C:\\Windows';
+    var regExe = windir + '\\System32\\reg.exe';
+    var rPath = regPath(args.path);
+    var child;
+    try {
+        child = cp.execFile(regExe, ['query', rPath]);
+    } catch (e) {
+        reply({ pluginaction: 'result', dispatchId: dispatchId, ok: false, error: 'spawn reg: ' + e });
+        return;
+    }
+    var stdout = '', stderr = '';
+    try {
+        if (child.stdout) child.stdout.on('data', function (c) { stdout += String(c); });
+        if (child.stderr) child.stderr.on('data', function (c) { stderr += String(c); });
+    } catch (e) {}
+    var finished = false;
+    child.on('exit', function (code) {
+        if (finished) return; finished = true;
+        // reg query renvoie exit 1 si clé vide / inexistante.
+        var lines = stdout.split(/\r?\n/);
+        var keys = [];
+        // Format reg query : chaque ligne de sous-clé commence par le chemin complet.
+        // Ex pour 'reg query HKLM' :
+        //   HKEY_LOCAL_MACHINE\BCD00000000
+        //   HKEY_LOCAL_MACHINE\HARDWARE
+        // Pour 'reg query HKLM\Software' :
+        //   HKEY_LOCAL_MACHINE\Software\7-Zip
+        //   ...
+        // Les valeurs sont indentées (commencent par espaces).
+        var prefix = expandRoot(rPath);
+        lines.forEach(function (l) {
+            if (!l || l.charAt(0) === ' ' || l.charAt(0) === '\t') return;
+            if (l.indexOf(prefix) === 0) {
+                var rest = l.substring(prefix.length);
+                if (rest.charAt(0) === '\\') rest = rest.substring(1);
+                if (rest.length > 0) keys.push(rest);
+            }
+        });
+        if (code !== 0 && keys.length === 0 && stderr) {
+            reply({ pluginaction: 'result', dispatchId: dispatchId, ok: false, error: stderr.trim().slice(0, 300) });
+            return;
+        }
+        reply({ pluginaction: 'result', dispatchId: dispatchId, ok: true, data: { keys: keys } });
+    });
+    setTimeout(function () {
+        if (finished) return; finished = true;
+        try { child.kill(); } catch (e) {}
+        reply({ pluginaction: 'result', dispatchId: dispatchId, ok: false, error: 'reg timeout' });
+    }, 15 * 1000);
+}
+
+function expandRoot(p) {
+    var map = {
+        HKLM: 'HKEY_LOCAL_MACHINE',
+        HKCU: 'HKEY_CURRENT_USER',
+        HKCR: 'HKEY_CLASSES_ROOT',
+        HKU:  'HKEY_USERS',
+        HKCC: 'HKEY_CURRENT_CONFIG',
+    };
+    var m = p.match(/^([A-Z]+)(\\.*)?$/);
+    if (m && map[m[1]]) return map[m[1]] + (m[2] || '');
+    return p;
 }
 
 // --- Exécution PowerShell + parsing JSON ----------------------------------
