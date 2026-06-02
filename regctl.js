@@ -12,6 +12,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const path = require('path');
 
 module.exports.regctl = function (parent) {
     const obj = {};
@@ -48,7 +49,12 @@ module.exports.regctl = function (parent) {
     }
 
     obj.handleAdminReq = function (req, res, user) {
-        const action = String(req.query.action || '');
+        const action = String((req.query && req.query.action) || '');
+
+        if (!action) {
+            // Pas d'action : on rend la vue handlebars du plugin (panneau admin).
+            return res.render(path.join(__dirname, 'views/regctl'), { user: user });
+        }
 
         if (action === 'ping') return sendJson(res, 200, { ok: true, plugin: 'regctl' });
 
