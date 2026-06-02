@@ -104,6 +104,8 @@ function callAgent(action, body) {
     var dispatchId = r.dispatchId;
     var tries = 0;
     return new Promise(function (resolve, reject) {
+      // Long-polling : le serveur tient la requête ouverte jusqu'au résultat
+      // (ou 25s). On reboucle direct sans setTimeout.
       var poll = function () {
         tries++;
         api('pollResult', { dispatchId: dispatchId }).then(function (p) {
@@ -111,11 +113,11 @@ function callAgent(action, body) {
             setBusy(false);
             if (p.result && p.result.ok) resolve(p.result.data);
             else reject(new Error((p.result && p.result.error) || 'erreur agent'));
-          } else if (tries > 60) {
+          } else if (p.unknown || tries > 4) {
             setBusy(false);
-            reject(new Error('timeout (60s)'));
+            reject(new Error(p.unknown ? 'dispatch perdu' : 'timeout'));
           } else {
-            setTimeout(poll, 500);
+            poll();
           }
         }).catch(function (e) { setBusy(false); reject(e); });
       };

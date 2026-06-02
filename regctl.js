@@ -20,11 +20,15 @@ module.exports.regctl = function (parent) {
     obj.meshServer = parent.parent;
     obj.VIEWS = __dirname + '/views/';
 
-    // Résultats en attente : dispatchId -> { resolve(result), reject(error), timer }.
-    // Au lieu de Promesses on stocke les résultats dans une map ; l'UI polle.
-    const pending = {};        // dispatchId -> true (en cours)
-    const results = {};        // dispatchId -> { ok, data, error, time }
-    const RESULT_TTL_MS = 5 * 60 * 1000;
+    // Pour chaque dispatchId :
+    //  - waiters[id] = liste des res HTTP en attente de réponse (long-polling)
+    //  - results[id] = { ok, data, error, time } si déjà arrivé mais pas réclamé
+    // Avec long-polling, la latence d'attente disparaît : dès que l'agent
+    // remonte le résultat, on flush vers le res qui attend.
+    const pending = {};
+    const waiters = {};
+    const results = {};
+    const RESULT_TTL_MS = 60 * 1000;
 
     function newDispatchId() { return crypto.randomBytes(12).toString('hex'); }
     function gcResults() {
@@ -132,7 +136,9 @@ module.exports.regctl = function (parent) {
         }
 
         if (action === 'pollResult') {
-            // L'UI appelle ça en boucle après dispatch pour récupérer le résultat.
+            // Long-polling : si le résultat est déjà là, on répond tout de suite.
+            // Sinon on s'inscrit comme waiter et on rendra la réponse dès qu'il
+            // arrive (ou après 25s, l'UI re-poll).
             const id = String(req.query.dispatchId || '');
             if (!id) return sendJson(res, 400, { error: 'dispatchId requis' });
             if (results[id]) {
@@ -140,8 +146,19 @@ module.exports.regctl = function (parent) {
                 delete results[id];
                 return sendJson(res, 200, { ready: true, result: r });
             }
-            if (pending[id]) return sendJson(res, 200, { ready: false });
-            return sendJson(res, 200, { ready: false, unknown: true });
+            if (!pending[id]) {
+                return sendJson(res, 200, { ready: false, unknown: true });
+            }
+            if (!waiters[id]) waiters[id] = [];
+            const waiter = { res: res, timer: null };
+            waiters[id].push(waiter);
+            waiter.timer = setTimeout(() => {
+                const arr = waiters[id] || [];
+                const i = arr.indexOf(waiter);
+                if (i !== -1) arr.splice(i, 1);
+                try { sendJson(res, 200, { ready: false }); } catch (e) {}
+            }, 25000);
+            return;
         }
 
         return sendJson(res, 404, { error: 'action inconnue: ' + action });
@@ -154,13 +171,25 @@ module.exports.regctl = function (parent) {
             if (command.pluginaction !== 'result') return;
             const id = command.dispatchId;
             if (!id) return;
-            results[id] = {
+            const payload = {
                 ok: !!command.ok,
                 data: command.data,
                 error: command.error,
                 time: Date.now(),
             };
             delete pending[id];
+            // Flush vers les waiters en long-polling.
+            const arr = waiters[id] || [];
+            delete waiters[id];
+            if (arr.length) {
+                arr.forEach((w) => {
+                    try { clearTimeout(w.timer); } catch (e) {}
+                    try { sendJson(w.res, 200, { ready: true, result: payload }); } catch (e) {}
+                });
+            } else {
+                // Personne n'écoute encore — on stocke pour le prochain poll.
+                results[id] = payload;
+            }
         } catch (e) {
             console.log('regctl: serveraction error: ' + e.message);
         }
