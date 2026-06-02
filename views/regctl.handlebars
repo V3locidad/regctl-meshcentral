@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>regctl — Registre Windows</title>
+<style>
+  html, body { height: 100%; margin: 0; font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; font-size: 13px; color: #222; }
+  body { display: flex; flex-direction: column; height: 100vh; }
+  header { padding: 8px 12px; border-bottom: 1px solid #ddd; background: #fafafa; display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+  header h1 { margin: 0; font-size: 14px; font-weight: 600; }
+  header .grow { flex: 1; }
+  header select, header button, header input { font-size: 12px; padding: 3px 6px; }
+  main { display: flex; flex: 1; min-height: 0; }
+  .pane { overflow: auto; padding: 6px; }
+  #tree { width: 38%; border-right: 1px solid #ddd; }
+  #values { flex: 1; }
+  .node { padding: 1px 4px 1px 0; cursor: pointer; white-space: nowrap; font-family: Menlo, Consolas, monospace; font-size: 12px; }
+  .node .twist { display: inline-block; width: 12px; color: #888; }
+  .node.selected > .label { background: #d6e9ff; }
+  .node .label:hover { background: #eef4fb; }
+  .children { padding-left: 14px; }
+  .err { color: #b00; font-size: 11px; padding: 4px; }
+  .toolbar { padding: 6px 8px; border-bottom: 1px solid #eee; background: #f7f7f7; display: flex; gap: 6px; align-items: center; font-size: 12px; }
+  .toolbar .path { font-family: Menlo, Consolas, monospace; flex: 1; padding: 2px 4px; background: #fff; border: 1px solid #ddd; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 4px 6px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; position: sticky; top: 0; font-weight: 600; }
+  tr.row:hover { background: #fafafa; cursor: pointer; }
+  tr.row.selected { background: #fff7d6; }
+  td.data { font-family: Menlo, Consolas, monospace; word-break: break-all; max-width: 400px; }
+  .badge { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; background: #e2e3e5; color: #383d41; }
+  .modalBg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .modal { background: #fff; padding: 16px 20px; border-radius: 6px; min-width: 420px; max-width: 90%; max-height: 90%; overflow: auto; }
+  .modal h3 { margin: 0 0 10px 0; font-size: 14px; }
+  .modal label { display: block; margin: 6px 0 2px; font-size: 12px; color: #555; }
+  .modal input, .modal select, .modal textarea { width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 12px; font-family: inherit; }
+  .modal textarea { font-family: Menlo, Consolas, monospace; min-height: 80px; }
+  .modal .actions { margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end; }
+  .empty { color: #aaa; font-style: italic; padding: 12px; text-align: center; }
+  .danger { background: #fbe9e7; color: #8a2a17; border: 1px solid #f5c2b8; padding: 3px 8px; border-radius: 3px; cursor: pointer; }
+  button { padding: 3px 8px; cursor: pointer; }
+  #spinner { display: none; color: #888; font-size: 11px; margin-left: 6px; }
+  #spinner.on { display: inline; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Registre — regctl</h1>
+  <select id="agentSel" style="min-width:240px">
+    <option value="">— Sélectionner un poste —</option>
+  </select>
+  <input id="agentFilter" placeholder="Filtrer…" style="width:140px">
+  <span id="spinner">⟳</span>
+  <div class="grow"></div>
+  <button id="refreshTree" title="Recharger l'arbre">↻ Arbre</button>
+</header>
+
+<main>
+  <div id="tree" class="pane">
+    <div class="empty">Sélectionne un poste pour commencer.</div>
+  </div>
+  <div id="values" class="pane" style="padding:0">
+    <div class="toolbar">
+      <span class="path" id="curPath">—</span>
+      <button id="newValBtn" disabled>+ Valeur</button>
+      <button id="newKeyBtn" disabled>+ Sous-clé</button>
+      <button id="delKeyBtn" class="danger" disabled>Suppr. clé</button>
+    </div>
+    <div id="valuesBody" style="padding:6px">
+      <div class="empty">Sélectionne une clé pour voir ses valeurs.</div>
+    </div>
+  </div>
+</main>
+
+<script>
+'use strict';
+function $(id) { return document.getElementById(id); }
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c];
+  });
+}
+function setBusy(on) { $('spinner').classList.toggle('on', !!on); }
+
+function api(action, params, body) {
+  var qs = 'action=' + encodeURIComponent(action);
+  if (params) Object.keys(params).forEach(function (k) {
+    qs += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+  });
+  if (body) qs += '&payload=' + encodeURIComponent(JSON.stringify(body));
+  return fetch('/pluginadmin.ashx?pin=regctl&' + qs, { credentials: 'include' })
+    .then(function (r) { return r.json(); });
+}
+
+// dispatch + polling. Renvoie une promesse qui se résout avec result.data ou rejette avec result.error.
+function callAgent(action, body) {
+  setBusy(true);
+  return api(action, null, body).then(function (r) {
+    if (!r || !r.ok) {
+      setBusy(false);
+      throw new Error((r && r.error) || 'dispatch KO');
+    }
+    var dispatchId = r.dispatchId;
+    var tries = 0;
+    return new Promise(function (resolve, reject) {
+      var poll = function () {
+        tries++;
+        api('pollResult', { dispatchId: dispatchId }).then(function (p) {
+          if (p.ready) {
+            setBusy(false);
+            if (p.result && p.result.ok) resolve(p.result.data);
+            else reject(new Error((p.result && p.result.error) || 'erreur agent'));
+          } else if (tries > 60) {
+            setBusy(false);
+            reject(new Error('timeout (60s)'));
+          } else {
+            setTimeout(poll, 500);
+          }
+        }).catch(function (e) { setBusy(false); reject(e); });
+      };
+      poll();
+    });
+  });
+}
+
+// --- Tree -----------------------------------------------------------------
+
+var ROOTS = ['HKLM', 'HKCU', 'HKCR', 'HKU', 'HKCC'];
+var selectedPath = null;     // chemin de la clé sélectionnée (ex: HKLM\Software)
+var selectedNodeEl = null;
+
+function renderRoots() {
+  var html = ROOTS.map(function (r) { return nodeHtml(r, r, true); }).join('');
+  $('tree').innerHTML = html;
+  bindTree();
+}
+
+function nodeHtml(path, label, hasChildren) {
+  return '<div class="node" data-path="' + escapeHtml(path) + '">'
+       +   '<span class="label">'
+       +     '<span class="twist">' + (hasChildren ? '▸' : ' ') + '</span>'
+       +     escapeHtml(label)
+       +   '</span>'
+       +   '<div class="children"></div>'
+       + '</div>';
+}
+
+function bindTree() {
+  [].slice.call(document.querySelectorAll('#tree .node > .label')).forEach(function (lab) {
+    if (lab._bound) return; lab._bound = true;
+    lab.onclick = function (ev) {
+      ev.stopPropagation();
+      var node = lab.parentNode;
+      var path = node.getAttribute('data-path');
+      selectKey(path, node);
+      toggleNode(node);
+    };
+  });
+}
+
+function toggleNode(node) {
+  var path = node.getAttribute('data-path');
+  var children = node.querySelector('.children');
+  var twist = node.querySelector('.twist');
+  if (children.dataset.loaded === 'open') {
+    children.dataset.loaded = 'closed';
+    children.style.display = 'none';
+    twist.textContent = '▸';
+    return;
+  }
+  if (children.dataset.loaded === 'closed') {
+    children.style.display = '';
+    children.dataset.loaded = 'open';
+    twist.textContent = '▾';
+    return;
+  }
+  // Pas encore chargé → enumKeys.
+  twist.textContent = '⋯';
+  callAgent('enumKeys', { nodeId: currentNode(), path: path }).then(function (data) {
+    var keys = (data && data.keys) || [];
+    children.innerHTML = keys.map(function (k) { return nodeHtml(path + '\\' + k, k, true); }).join('') ||
+                          '<div style="color:#aaa;padding-left:14px;font-style:italic;font-size:11px">(vide)</div>';
+    children.dataset.loaded = 'open';
+    children.style.display = '';
+    twist.textContent = keys.length ? '▾' : '·';
+    bindTree();
+  }).catch(function (e) {
+    children.innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
+    children.dataset.loaded = 'open';
+    children.style.display = '';
+    twist.textContent = '!';
+  });
+}
+
+function selectKey(path, nodeEl) {
+  selectedPath = path;
+  if (selectedNodeEl) selectedNodeEl.classList.remove('selected');
+  selectedNodeEl = nodeEl;
+  if (nodeEl) nodeEl.classList.add('selected');
+  $('curPath').textContent = path;
+  $('newValBtn').disabled = false;
+  $('newKeyBtn').disabled = false;
+  $('delKeyBtn').disabled = (ROOTS.indexOf(path) !== -1);
+  loadValues(path);
+}
+
+function loadValues(path) {
+  $('valuesBody').innerHTML = '<div class="empty">Chargement…</div>';
+  callAgent('enumValues', { nodeId: currentNode(), path: path }).then(function (data) {
+    var vals = (data && data.values) || [];
+    if (!vals.length) { $('valuesBody').innerHTML = '<div class="empty">Aucune valeur.</div>'; return; }
+    var rows = vals.map(function (v) {
+      var dataStr = (v.type === 'MultiString' && Array.isArray(v.data)) ? v.data.join(' | ') : String(v.data == null ? '' : v.data);
+      return '<tr class="row" data-name="' + escapeHtml(v.name) + '">'
+           +   '<td>' + (v.name || '<i>(Par défaut)</i>') + '</td>'
+           +   '<td><span class="badge">' + escapeHtml(v.type) + '</span></td>'
+           +   '<td class="data">' + escapeHtml(dataStr.slice(0, 200)) + (dataStr.length > 200 ? '…' : '') + '</td>'
+           +   '<td style="white-space:nowrap">'
+           +     '<button data-act="edit" data-name="' + escapeHtml(v.name) + '">Éditer</button> '
+           +     '<button class="danger" data-act="del" data-name="' + escapeHtml(v.name) + '">×</button>'
+           +   '</td>'
+           + '</tr>';
+    }).join('');
+    $('valuesBody').innerHTML = '<table><thead><tr><th>Nom</th><th>Type</th><th>Valeur</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+    [].slice.call($('valuesBody').querySelectorAll('button[data-act]')).forEach(function (b) {
+      b.onclick = function (ev) {
+        ev.stopPropagation();
+        var act = b.getAttribute('data-act');
+        var nm = b.getAttribute('data-name');
+        if (act === 'edit') editValue(nm, vals.find(function (x) { return x.name === nm; }));
+        else if (act === 'del') deleteValue(nm);
+      };
+    });
+  }).catch(function (e) {
+    $('valuesBody').innerHTML = '<div class="err">' + escapeHtml(e.message) + '</div>';
+  });
+}
+
+// --- Editeur valeur -------------------------------------------------------
+
+function showModal(html) {
+  var bg = document.createElement('div'); bg.className = 'modalBg';
+  bg.innerHTML = '<div class="modal">' + html + '</div>';
+  document.body.appendChild(bg);
+  bg.onclick = function (e) { if (e.target === bg) document.body.removeChild(bg); };
+  return bg;
+}
+function closeModal(bg) { try { document.body.removeChild(bg); } catch (e) {} }
+
+var TYPES = ['String', 'ExpandString', 'DWord', 'QWord', 'Binary', 'MultiString'];
+
+function editValue(name, existing) {
+  var isNew = !existing;
+  var v = existing || { name: name || '', type: 'String', data: '' };
+  var typeOpts = TYPES.map(function (t) {
+    return '<option value="' + t + '"' + (t === v.type ? ' selected' : '') + '>' + t + '</option>';
+  }).join('');
+  var dataStr = Array.isArray(v.data) ? v.data.join('\n') : String(v.data == null ? '' : v.data);
+  var bg = showModal([
+    '<h3>' + (isNew ? 'Nouvelle valeur' : 'Éditer ' + escapeHtml(v.name)) + '</h3>',
+    '<label>Nom</label>',
+    '<input id="evName" value="' + escapeHtml(v.name) + '"' + (isNew ? '' : ' disabled') + '>',
+    '<label>Type</label>',
+    '<select id="evType">' + typeOpts + '</select>',
+    '<label id="evDataLabel">Donnée</label>',
+    '<textarea id="evData">' + escapeHtml(dataStr) + '</textarea>',
+    '<div class="actions">',
+    '  <button id="evCancel">Annuler</button>',
+    '  <button id="evSave">Enregistrer</button>',
+    '</div>',
+  ].join(''));
+  var updateHint = function () {
+    var t = bg.querySelector('#evType').value;
+    var label = bg.querySelector('#evDataLabel');
+    if (t === 'DWord' || t === 'QWord') label.textContent = 'Donnée (entier)';
+    else if (t === 'Binary') label.textContent = 'Donnée (hexa, ex: DE AD BE EF)';
+    else if (t === 'MultiString') label.textContent = 'Donnée (une ligne = une entrée)';
+    else label.textContent = 'Donnée';
+  };
+  bg.querySelector('#evType').onchange = updateHint;
+  updateHint();
+  bg.querySelector('#evCancel').onclick = function () { closeModal(bg); };
+  bg.querySelector('#evSave').onclick = function () {
+    var body = {
+      nodeId: currentNode(),
+      path: selectedPath,
+      name: bg.querySelector('#evName').value,
+      type: bg.querySelector('#evType').value,
+      data: bg.querySelector('#evData').value,
+    };
+    callAgent('writeValue', body).then(function () {
+      closeModal(bg);
+      loadValues(selectedPath);
+    }).catch(function (e) { alert('Erreur: ' + e.message); });
+  };
+}
+
+function deleteValue(name) {
+  if (!confirm('Supprimer la valeur "' + name + '" ?')) return;
+  callAgent('deleteValue', { nodeId: currentNode(), path: selectedPath, name: name })
+    .then(function () { loadValues(selectedPath); })
+    .catch(function (e) { alert('Erreur: ' + e.message); });
+}
+
+function createKey() {
+  var sub = prompt('Nom de la sous-clé à créer sous\n' + selectedPath);
+  if (!sub) return;
+  callAgent('createKey', { nodeId: currentNode(), path: selectedPath + '\\' + sub })
+    .then(function () {
+      // Recharge l'enfant courant.
+      if (selectedNodeEl) {
+        var children = selectedNodeEl.querySelector('.children');
+        children.dataset.loaded = ''; children.innerHTML = '';
+        toggleNode(selectedNodeEl);
+      }
+    })
+    .catch(function (e) { alert('Erreur: ' + e.message); });
+}
+
+function deleteCurrentKey() {
+  if (!confirm('Supprimer la clé "' + selectedPath + '" et tout son contenu ?\nCette action est IRRÉVERSIBLE.')) return;
+  callAgent('deleteKey', { nodeId: currentNode(), path: selectedPath })
+    .then(function () {
+      if (selectedNodeEl && selectedNodeEl.parentNode && selectedNodeEl.parentNode.parentNode) {
+        selectedNodeEl.parentNode.removeChild(selectedNodeEl);
+      }
+      selectedPath = null; selectedNodeEl = null;
+      $('curPath').textContent = '—';
+      $('valuesBody').innerHTML = '<div class="empty">Clé supprimée.</div>';
+      $('newValBtn').disabled = $('newKeyBtn').disabled = $('delKeyBtn').disabled = true;
+    })
+    .catch(function (e) { alert('Erreur: ' + e.message); });
+}
+
+// --- Agents ---------------------------------------------------------------
+
+var agents = [];
+function currentNode() { return $('agentSel').value; }
+
+function loadAgents() {
+  api('agents').then(function (r) {
+    agents = r.agents || [];
+    renderAgentSelect();
+  });
+}
+function renderAgentSelect() {
+  var q = ($('agentFilter').value || '').toLowerCase().trim();
+  var opts = '<option value="">— Sélectionner un poste —</option>';
+  agents.filter(function (a) { return !q || a.name.toLowerCase().indexOf(q) !== -1 || (a.mesh || '').toLowerCase().indexOf(q) !== -1; })
+    .forEach(function (a) {
+      opts += '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name) + ' — ' + escapeHtml(a.mesh) + '</option>';
+    });
+  $('agentSel').innerHTML = opts;
+}
+
+$('agentSel').onchange = function () {
+  selectedPath = null; selectedNodeEl = null;
+  $('curPath').textContent = '—';
+  $('valuesBody').innerHTML = '<div class="empty">Sélectionne une clé pour voir ses valeurs.</div>';
+  $('newValBtn').disabled = $('newKeyBtn').disabled = $('delKeyBtn').disabled = true;
+  if (currentNode()) renderRoots();
+  else $('tree').innerHTML = '<div class="empty">Sélectionne un poste pour commencer.</div>';
+};
+$('agentFilter').oninput = renderAgentSelect;
+$('refreshTree').onclick = function () { if (currentNode()) renderRoots(); };
+$('newValBtn').onclick = function () { if (selectedPath) editValue('', null); };
+$('newKeyBtn').onclick = function () { if (selectedPath) createKey(); };
+$('delKeyBtn').onclick = function () { if (selectedPath) deleteCurrentKey(); };
+
+loadAgents();
+</script>
+
+</body>
+</html>
