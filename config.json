@@ -1,7 +1,7 @@
 {
   "name": "regctl",
   "shortName": "regctl",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "author": "V3locidad",
   "description": "Éditeur de registre Windows à distance via MeshCentral. Navigation, lecture, écriture, suppression de clés et valeurs sur un ou plusieurs postes.",
   "hasAdminPanel": true,

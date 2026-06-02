@@ -222,11 +222,14 @@ function runRegEnumKeys(args) {
     var dispatchId = args.dispatchId;
     var cp = require('child_process');
     var windir = process.env.windir || process.env.WINDIR || 'C:\\Windows';
-    var regExe = windir + '\\System32\\reg.exe';
+    var cmdExe = windir + '\\System32\\cmd.exe';
     var rPath = regPath(args.path);
+    // Wrapper cmd.exe /c — MeshAgent execFile injecte une mauvaise citation
+    // qui fait que reg.exe voit «HKLM» au lieu de HKLM en argument.
+    // En passant par cmd /c on contourne ce parsing.
     var child;
     try {
-        child = cp.execFile(regExe, ['query', rPath]);
+        child = cp.execFile(cmdExe, ['/c', 'reg query "' + rPath.replace(/"/g, '\\"') + '"']);
     } catch (e) {
         reply({ pluginaction: 'result', dispatchId: dispatchId, ok: false, error: 'spawn reg: ' + e });
         return;
