@@ -72,12 +72,10 @@ module.exports.regctl = function (parent) {
                     if (err2) return sendJson(res, 500, { error: err2.message });
                     const meshById = {};
                     (meshes || []).forEach((m) => { meshById[m._id] = m.name; });
+                    // On garde tous les nodes (online ou pas). Le filtre Windows
+                        //  pourrait passer par n.agent.id mais c'est plus simple
+                        //  côté UI : l'utilisateur voit tout et coche ce qu'il veut.
                     const list = (nodes || [])
-                        .filter((n) => {
-                            // agent.id : voir AGENT_TYPE map MC. Windows = 1, 2 (legacy), 3, 4, etc.
-                            // Plutôt que filtrer trop strict, on garde tout et on note l'OS.
-                            return !!wsagents[n._id];
-                        })
                         .map((n) => ({
                             id: n._id,
                             name: n.name || '?',
@@ -85,7 +83,11 @@ module.exports.regctl = function (parent) {
                             meshid: n.meshid,
                             online: !!wsagents[n._id],
                         }))
-                        .sort((a, b) => a.name.localeCompare(b.name));
+                        .sort((a, b) => {
+                            // Online d'abord, puis tri alpha.
+                            if (a.online !== b.online) return a.online ? -1 : 1;
+                            return a.name.localeCompare(b.name);
+                        });
                     sendJson(res, 200, { agents: list });
                 });
             });

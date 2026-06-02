@@ -9,24 +9,37 @@
   header { padding: 8px 12px; border-bottom: 1px solid #ddd; background: #fafafa; display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
   header h1 { margin: 0; font-size: 14px; font-weight: 600; }
   header .grow { flex: 1; }
-  header select, header button, header input { font-size: 12px; padding: 3px 6px; }
+  header input, header button { font-size: 12px; padding: 3px 6px; }
   main { display: flex; flex: 1; min-height: 0; }
-  .pane { overflow: auto; padding: 6px; }
-  #tree { width: 38%; border-right: 1px solid #ddd; }
+  .pane { overflow: auto; padding: 0; }
+  #agents { width: 260px; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+  #agentsList { overflow: auto; flex: 1; }
+  #agentsBar { padding: 6px; border-bottom: 1px solid #eee; background: #f7f7f7; display: flex; gap: 4px; align-items: center; }
+  #agentsBar input { flex: 1; }
+  #agentsFoot { padding: 6px 8px; border-top: 1px solid #eee; background: #f7f7f7; font-size: 11px; color: #555; }
+  .ag { padding: 4px 8px; border-bottom: 1px solid #f3f3f3; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .ag:hover { background: #f4f8fc; }
+  .ag.active { background: #d6e9ff; }
+  .ag .dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
+  .ag .dot.on { background: #2bb673; }
+  .ag .dot.off { background: #cd3a3a; }
+  .ag .name { flex: 1; font-size: 12px; }
+  .ag .mesh { color: #888; font-size: 10px; }
+  .ag input[type=checkbox] { flex: 0 0 auto; }
+  #tree { width: 36%; border-right: 1px solid #ddd; }
   #values { flex: 1; }
   .node { padding: 1px 4px 1px 0; cursor: pointer; white-space: nowrap; font-family: Menlo, Consolas, monospace; font-size: 12px; }
   .node .twist { display: inline-block; width: 12px; color: #888; }
   .node.selected > .label { background: #d6e9ff; }
   .node .label:hover { background: #eef4fb; }
   .children { padding-left: 14px; }
-  .err { color: #b00; font-size: 11px; padding: 4px; }
+  .err { color: #b00; font-size: 11px; padding: 4px; white-space: pre-wrap; }
   .toolbar { padding: 6px 8px; border-bottom: 1px solid #eee; background: #f7f7f7; display: flex; gap: 6px; align-items: center; font-size: 12px; }
   .toolbar .path { font-family: Menlo, Consolas, monospace; flex: 1; padding: 2px 4px; background: #fff; border: 1px solid #ddd; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td { padding: 4px 6px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: top; }
   th { background: #f4f4f4; position: sticky; top: 0; font-weight: 600; }
   tr.row:hover { background: #fafafa; cursor: pointer; }
-  tr.row.selected { background: #fff7d6; }
   td.data { font-family: Menlo, Consolas, monospace; word-break: break-all; max-width: 400px; }
   .badge { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; background: #e2e3e5; color: #383d41; }
   .modalBg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 10; }
@@ -39,27 +52,40 @@
   .empty { color: #aaa; font-style: italic; padding: 12px; text-align: center; }
   .danger { background: #fbe9e7; color: #8a2a17; border: 1px solid #f5c2b8; padding: 3px 8px; border-radius: 3px; cursor: pointer; }
   button { padding: 3px 8px; cursor: pointer; }
+  button[disabled] { opacity: 0.5; cursor: not-allowed; }
   #spinner { display: none; color: #888; font-size: 11px; margin-left: 6px; }
   #spinner.on { display: inline; }
+  .batchTag { background: #fff3cd; color: #856404; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+  .batchResults { max-height: 220px; overflow: auto; border: 1px solid #eee; padding: 6px; font-family: Menlo, Consolas, monospace; font-size: 11px; margin-top: 8px; }
+  .batchResults .ok { color: #2bb673; }
+  .batchResults .ko { color: #cd3a3a; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>Registre — regctl</h1>
-  <select id="agentSel" style="min-width:240px">
-    <option value="">— Sélectionner un poste —</option>
-  </select>
-  <input id="agentFilter" placeholder="Filtrer…" style="width:140px">
   <span id="spinner">⟳</span>
+  <span id="batchTag" class="batchTag" style="display:none"></span>
   <div class="grow"></div>
+  <button id="refreshAgents" title="Recharger la liste des postes">↻ Postes</button>
   <button id="refreshTree" title="Recharger l'arbre">↻ Arbre</button>
 </header>
 
 <main>
-  <div id="tree" class="pane">
-    <div class="empty">Sélectionne un poste pour commencer.</div>
+  <div id="agents" class="pane">
+    <div id="agentsBar">
+      <input id="agentFilter" placeholder="Filtrer…">
+      <button id="agentSelAll" title="Tout cocher / décocher">⊞</button>
+    </div>
+    <div id="agentsList"><div class="empty">Chargement…</div></div>
+    <div id="agentsFoot"><span id="agentsStats">0 postes</span></div>
   </div>
+
+  <div id="tree" class="pane">
+    <div class="empty">Clique sur un poste à gauche pour parcourir son registre.</div>
+  </div>
+
   <div id="values" class="pane" style="padding:0">
     <div class="toolbar">
       <span class="path" id="curPath">—</span>
@@ -93,7 +119,7 @@ function api(action, params, body) {
     .then(function (r) { return r.json(); });
 }
 
-// dispatch + polling. Renvoie une promesse qui se résout avec result.data ou rejette avec result.error.
+// dispatch + long-polling. Renvoie une promesse résolue avec result.data.
 function callAgent(action, body) {
   setBusy(true);
   return api(action, null, body).then(function (r) {
@@ -104,8 +130,6 @@ function callAgent(action, body) {
     var dispatchId = r.dispatchId;
     var tries = 0;
     return new Promise(function (resolve, reject) {
-      // Long-polling : le serveur tient la requête ouverte jusqu'au résultat
-      // (ou 25s). On reboucle direct sans setTimeout.
       var poll = function () {
         tries++;
         api('pollResult', { dispatchId: dispatchId }).then(function (p) {
@@ -116,9 +140,7 @@ function callAgent(action, body) {
           } else if (p.unknown || tries > 4) {
             setBusy(false);
             reject(new Error(p.unknown ? 'dispatch perdu' : 'timeout'));
-          } else {
-            poll();
-          }
+          } else poll();
         }).catch(function (e) { setBusy(false); reject(e); });
       };
       poll();
@@ -126,15 +148,96 @@ function callAgent(action, body) {
   });
 }
 
+// --- Agents ---------------------------------------------------------------
+
+var agents = [];
+var activeNodeId = null;       // poste en cours de navigation (arbre)
+var checkedNodes = {};         // ensemble des postes cochés pour batch ops
+
+function loadAgents() {
+  api('agents').then(function (r) {
+    agents = r.agents || [];
+    renderAgents();
+    updateBatchTag();
+  });
+}
+
+function renderAgents() {
+  var q = ($('agentFilter').value || '').toLowerCase().trim();
+  var filtered = agents.filter(function (a) {
+    return !q || a.name.toLowerCase().indexOf(q) !== -1 || (a.mesh || '').toLowerCase().indexOf(q) !== -1;
+  });
+  if (!filtered.length) {
+    $('agentsList').innerHTML = '<div class="empty">Aucun poste.</div>';
+    $('agentsStats').textContent = '0 / ' + agents.length;
+    return;
+  }
+  $('agentsList').innerHTML = filtered.map(function (a) {
+    var actCls = (a.id === activeNodeId ? ' active' : '');
+    var checked = checkedNodes[a.id] ? ' checked' : '';
+    var dot = a.online ? 'on' : 'off';
+    return '<div class="ag' + actCls + '" data-id="' + escapeHtml(a.id) + '">'
+         +   '<input type="checkbox" class="chk"' + checked + (a.online ? '' : ' disabled') + '>'
+         +   '<span class="dot ' + dot + '" title="' + (a.online ? 'En ligne' : 'Hors ligne') + '"></span>'
+         +   '<span class="name">' + escapeHtml(a.name) + '</span>'
+         +   '<span class="mesh">' + escapeHtml(a.mesh) + '</span>'
+         + '</div>';
+  }).join('');
+  var on = filtered.filter(function (a) { return a.online; }).length;
+  $('agentsStats').textContent = filtered.length + ' / ' + agents.length + ' postes · ' + on + ' en ligne';
+
+  [].slice.call(document.querySelectorAll('#agentsList .ag')).forEach(function (row) {
+    var id = row.getAttribute('data-id');
+    var chk = row.querySelector('.chk');
+    chk.onchange = function () {
+      if (chk.checked) checkedNodes[id] = true; else delete checkedNodes[id];
+      updateBatchTag();
+    };
+    chk.onclick = function (ev) { ev.stopPropagation(); };
+    row.onclick = function () {
+      var a = agents.find(function (x) { return x.id === id; });
+      if (!a || !a.online) return;
+      activeNodeId = id;
+      renderAgents();
+      resetBrowser();
+      renderRoots();
+    };
+  });
+}
+
+function updateBatchTag() {
+  var n = Object.keys(checkedNodes).length;
+  var tag = $('batchTag');
+  if (n <= 1) { tag.style.display = 'none'; return; }
+  tag.style.display = '';
+  tag.textContent = 'Batch : ' + n + ' postes cochés';
+}
+
+$('agentFilter').oninput = renderAgents;
+$('refreshAgents').onclick = loadAgents;
+$('agentSelAll').onclick = function () {
+  var any = Object.keys(checkedNodes).length > 0;
+  checkedNodes = {};
+  if (!any) agents.filter(function (a) { return a.online; }).forEach(function (a) { checkedNodes[a.id] = true; });
+  renderAgents();
+  updateBatchTag();
+};
+
 // --- Tree -----------------------------------------------------------------
 
 var ROOTS = ['HKLM', 'HKCU', 'HKCR', 'HKU', 'HKCC'];
-var selectedPath = null;     // chemin de la clé sélectionnée (ex: HKLM\Software)
+var selectedPath = null;
 var selectedNodeEl = null;
 
+function resetBrowser() {
+  selectedPath = null; selectedNodeEl = null;
+  $('curPath').textContent = '—';
+  $('valuesBody').innerHTML = '<div class="empty">Sélectionne une clé pour voir ses valeurs.</div>';
+  $('newValBtn').disabled = $('newKeyBtn').disabled = $('delKeyBtn').disabled = true;
+}
+
 function renderRoots() {
-  var html = ROOTS.map(function (r) { return nodeHtml(r, r, true); }).join('');
-  $('tree').innerHTML = html;
+  $('tree').innerHTML = ROOTS.map(function (r) { return nodeHtml(r, r, true); }).join('');
   bindTree();
 }
 
@@ -177,9 +280,8 @@ function toggleNode(node) {
     twist.textContent = '▾';
     return;
   }
-  // Pas encore chargé → enumKeys.
   twist.textContent = '⋯';
-  callAgent('enumKeys', { nodeId: currentNode(), path: path }).then(function (data) {
+  callAgent('enumKeys', { nodeId: activeNodeId, path: path }).then(function (data) {
     var keys = (data && data.keys) || [];
     children.innerHTML = keys.map(function (k) { return nodeHtml(path + '\\' + k, k, true); }).join('') ||
                           '<div style="color:#aaa;padding-left:14px;font-style:italic;font-size:11px">(vide)</div>';
@@ -209,7 +311,7 @@ function selectKey(path, nodeEl) {
 
 function loadValues(path) {
   $('valuesBody').innerHTML = '<div class="empty">Chargement…</div>';
-  callAgent('enumValues', { nodeId: currentNode(), path: path }).then(function (data) {
+  callAgent('enumValues', { nodeId: activeNodeId, path: path }).then(function (data) {
     var vals = (data && data.values) || [];
     if (!vals.length) { $('valuesBody').innerHTML = '<div class="empty">Aucune valeur.</div>'; return; }
     var rows = vals.map(function (v) {
@@ -239,6 +341,60 @@ function loadValues(path) {
   });
 }
 
+// --- Batch (multi-cible) --------------------------------------------------
+
+function targetNodes() {
+  // Si des cases sont cochées, on les utilise. Sinon on retombe sur le poste actif.
+  var ids = Object.keys(checkedNodes);
+  if (!ids.length && activeNodeId) ids = [activeNodeId];
+  return ids;
+}
+
+function batchDispatch(action, makeBody, label) {
+  var ids = targetNodes();
+  if (!ids.length) return alert('Aucun poste cible.');
+  if (ids.length > 1 && !confirm(label + '\nAppliquer sur ' + ids.length + ' postes ?')) return;
+  // Modale de progression.
+  var bg = showModal([
+    '<h3>' + escapeHtml(label) + ' — ' + ids.length + ' poste' + (ids.length > 1 ? 's' : '') + '</h3>',
+    '<div id="bRes" class="batchResults"></div>',
+    '<div class="actions"><button id="bClose" disabled>Fermer</button></div>',
+  ].join(''));
+  var resBox = bg.querySelector('#bRes');
+  var btnClose = bg.querySelector('#bClose');
+  btnClose.onclick = function () { closeModal(bg); };
+  var nameById = {};
+  agents.forEach(function (a) { nameById[a.id] = a.name; });
+
+  // Dispatch séquentiel (les opérations registre sont rapides ; en parallèle
+  // ça monopoliserait trop d'execFile côté serveur MC).
+  var i = 0;
+  var ok = 0, ko = 0;
+  function next() {
+    if (i >= ids.length) {
+      resBox.innerHTML += '\n<div><b>Terminé : ' + ok + ' OK, ' + ko + ' KO</b></div>';
+      btnClose.disabled = false;
+      // Recharge la vue si pertinent.
+      if (selectedPath) loadValues(selectedPath);
+      return;
+    }
+    var id = ids[i++];
+    var body = makeBody(id);
+    resBox.innerHTML += '<div>• ' + escapeHtml(nameById[id] || id) + ' … </div>';
+    resBox.scrollTop = resBox.scrollHeight;
+    callAgent(action, body).then(function () {
+      ok++;
+      resBox.lastChild.innerHTML += '<span class="ok">OK</span>';
+      next();
+    }).catch(function (e) {
+      ko++;
+      resBox.lastChild.innerHTML += '<span class="ko">KO — ' + escapeHtml(e.message) + '</span>';
+      next();
+    });
+  }
+  next();
+}
+
 // --- Editeur valeur -------------------------------------------------------
 
 function showModal(html) {
@@ -259,8 +415,9 @@ function editValue(name, existing) {
     return '<option value="' + t + '"' + (t === v.type ? ' selected' : '') + '>' + t + '</option>';
   }).join('');
   var dataStr = Array.isArray(v.data) ? v.data.join('\n') : String(v.data == null ? '' : v.data);
+  var nIds = targetNodes().length;
   var bg = showModal([
-    '<h3>' + (isNew ? 'Nouvelle valeur' : 'Éditer ' + escapeHtml(v.name)) + '</h3>',
+    '<h3>' + (isNew ? 'Nouvelle valeur' : 'Éditer ' + escapeHtml(v.name)) + (nIds > 1 ? ' (' + nIds + ' postes)' : '') + '</h3>',
     '<label>Nom</label>',
     '<input id="evName" value="' + escapeHtml(v.name) + '"' + (isNew ? '' : ' disabled') + '>',
     '<label>Type</label>',
@@ -284,88 +441,45 @@ function editValue(name, existing) {
   updateHint();
   bg.querySelector('#evCancel').onclick = function () { closeModal(bg); };
   bg.querySelector('#evSave').onclick = function () {
-    var body = {
-      nodeId: currentNode(),
-      path: selectedPath,
-      name: bg.querySelector('#evName').value,
-      type: bg.querySelector('#evType').value,
-      data: bg.querySelector('#evData').value,
-    };
-    callAgent('writeValue', body).then(function () {
-      closeModal(bg);
-      loadValues(selectedPath);
-    }).catch(function (e) { alert('Erreur: ' + e.message); });
+    var name = bg.querySelector('#evName').value;
+    var type = bg.querySelector('#evType').value;
+    var data = bg.querySelector('#evData').value;
+    closeModal(bg);
+    batchDispatch('writeValue', function (nodeId) {
+      return { nodeId: nodeId, path: selectedPath, name: name, type: type, data: data };
+    }, 'Écrire ' + name);
   };
 }
 
 function deleteValue(name) {
-  if (!confirm('Supprimer la valeur "' + name + '" ?')) return;
-  callAgent('deleteValue', { nodeId: currentNode(), path: selectedPath, name: name })
-    .then(function () { loadValues(selectedPath); })
-    .catch(function (e) { alert('Erreur: ' + e.message); });
+  batchDispatch('deleteValue', function (nodeId) {
+    return { nodeId: nodeId, path: selectedPath, name: name };
+  }, 'Supprimer la valeur ' + name);
 }
 
 function createKey() {
   var sub = prompt('Nom de la sous-clé à créer sous\n' + selectedPath);
   if (!sub) return;
-  callAgent('createKey', { nodeId: currentNode(), path: selectedPath + '\\' + sub })
-    .then(function () {
-      // Recharge l'enfant courant.
-      if (selectedNodeEl) {
-        var children = selectedNodeEl.querySelector('.children');
-        children.dataset.loaded = ''; children.innerHTML = '';
-        toggleNode(selectedNodeEl);
-      }
-    })
-    .catch(function (e) { alert('Erreur: ' + e.message); });
+  batchDispatch('createKey', function (nodeId) {
+    return { nodeId: nodeId, path: selectedPath + '\\' + sub };
+  }, 'Créer la clé ' + sub);
+  // Recharge l'arbre courant après pour le poste actif.
+  setTimeout(function () {
+    if (selectedNodeEl && activeNodeId) {
+      var children = selectedNodeEl.querySelector('.children');
+      children.dataset.loaded = ''; children.innerHTML = '';
+      toggleNode(selectedNodeEl);
+    }
+  }, 800);
 }
 
 function deleteCurrentKey() {
-  if (!confirm('Supprimer la clé "' + selectedPath + '" et tout son contenu ?\nCette action est IRRÉVERSIBLE.')) return;
-  callAgent('deleteKey', { nodeId: currentNode(), path: selectedPath })
-    .then(function () {
-      if (selectedNodeEl && selectedNodeEl.parentNode && selectedNodeEl.parentNode.parentNode) {
-        selectedNodeEl.parentNode.removeChild(selectedNodeEl);
-      }
-      selectedPath = null; selectedNodeEl = null;
-      $('curPath').textContent = '—';
-      $('valuesBody').innerHTML = '<div class="empty">Clé supprimée.</div>';
-      $('newValBtn').disabled = $('newKeyBtn').disabled = $('delKeyBtn').disabled = true;
-    })
-    .catch(function (e) { alert('Erreur: ' + e.message); });
+  batchDispatch('deleteKey', function (nodeId) {
+    return { nodeId: nodeId, path: selectedPath };
+  }, 'Supprimer la clé ' + selectedPath);
 }
 
-// --- Agents ---------------------------------------------------------------
-
-var agents = [];
-function currentNode() { return $('agentSel').value; }
-
-function loadAgents() {
-  api('agents').then(function (r) {
-    agents = r.agents || [];
-    renderAgentSelect();
-  });
-}
-function renderAgentSelect() {
-  var q = ($('agentFilter').value || '').toLowerCase().trim();
-  var opts = '<option value="">— Sélectionner un poste —</option>';
-  agents.filter(function (a) { return !q || a.name.toLowerCase().indexOf(q) !== -1 || (a.mesh || '').toLowerCase().indexOf(q) !== -1; })
-    .forEach(function (a) {
-      opts += '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name) + ' — ' + escapeHtml(a.mesh) + '</option>';
-    });
-  $('agentSel').innerHTML = opts;
-}
-
-$('agentSel').onchange = function () {
-  selectedPath = null; selectedNodeEl = null;
-  $('curPath').textContent = '—';
-  $('valuesBody').innerHTML = '<div class="empty">Sélectionne une clé pour voir ses valeurs.</div>';
-  $('newValBtn').disabled = $('newKeyBtn').disabled = $('delKeyBtn').disabled = true;
-  if (currentNode()) renderRoots();
-  else $('tree').innerHTML = '<div class="empty">Sélectionne un poste pour commencer.</div>';
-};
-$('agentFilter').oninput = renderAgentSelect;
-$('refreshTree').onclick = function () { if (currentNode()) renderRoots(); };
+$('refreshTree').onclick = function () { if (activeNodeId) renderRoots(); };
 $('newValBtn').onclick = function () { if (selectedPath) editValue('', null); };
 $('newKeyBtn').onclick = function () { if (selectedPath) createKey(); };
 $('delKeyBtn').onclick = function () { if (selectedPath) deleteCurrentKey(); };
