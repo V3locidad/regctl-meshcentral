@@ -59,6 +59,23 @@
   .batchResults { max-height: 220px; overflow: auto; border: 1px solid #eee; padding: 6px; font-family: Menlo, Consolas, monospace; font-size: 11px; margin-top: 8px; }
   .batchResults .ok { color: #2bb673; }
   .batchResults .ko { color: #cd3a3a; }
+  /* Action rapide — cartes */
+  .qaGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px; }
+  .qaCard { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 2px solid #e5e5e5; border-radius: 6px; cursor: pointer; background: #fff; transition: all .1s; }
+  .qaCard:hover { border-color: #999; background: #fafafa; }
+  .qaIcon { font-size: 24px; flex: 0 0 auto; }
+  .qaTitle { font-weight: 600; font-size: 13px; }
+  .qaSub { font-size: 11px; color: #777; margin-top: 2px; }
+  .qaSel { padding: 6px 10px; border-radius: 4px; margin-bottom: 8px; border: 1px solid #ddd; }
+  .qaRunBtn { font-weight: 600; padding: 5px 12px; border-radius: 4px; border: 1px solid; cursor: pointer; }
+  .tone-green  { background: #e7f7ee; border-color: #b6e2c7; color: #1c6b3e; }
+  .tone-blue   { background: #e7f0fb; border-color: #b6cfe9; color: #1a4a87; }
+  .tone-orange { background: #fff4e3; border-color: #f5cfa1; color: #8a5217; }
+  .tone-red    { background: #fbe9e7; border-color: #f5b6ad; color: #8a2a17; }
+  .qaCard.tone-green:hover  { border-color: #2bb673; }
+  .qaCard.tone-blue:hover   { border-color: #2c6fd1; }
+  .qaCard.tone-orange:hover { border-color: #d18a2c; }
+  .qaCard.tone-red:hover    { border-color: #cd3a3a; }
 </style>
 </head>
 <body>
@@ -68,7 +85,7 @@
   <span id="spinner">⟳</span>
   <span id="batchTag" class="batchTag" style="display:none"></span>
   <div class="grow"></div>
-  <button id="quickActionBtn" title="Créer/écrire/supprimer à un chemin libre, sans naviguer">⚡ Action rapide</button>
+  <button id="quickActionBtn" style="font-weight:600" title="Créer/écrire/supprimer à un chemin libre, sans naviguer">⚡ Action rapide</button>
   <button id="refreshAgents" title="Recharger la liste des postes">↻ Postes</button>
   <button id="refreshTree" title="Recharger l'arbre">↻ Arbre</button>
 </header>
@@ -90,9 +107,9 @@
   <div id="values" class="pane" style="padding:0">
     <div class="toolbar">
       <span class="path" id="curPath">—</span>
-      <button id="newValBtn" disabled>+ Valeur</button>
-      <button id="newKeyBtn" disabled>+ Sous-clé</button>
-      <button id="delKeyBtn" class="danger" disabled>Suppr. clé</button>
+      <button id="newValBtn" disabled title="Ajouter une valeur dans la clé sélectionnée">📝 Valeur</button>
+      <button id="newKeyBtn" disabled title="Créer une sous-clé sous la clé sélectionnée">📁 Sous-clé</button>
+      <button id="delKeyBtn" class="danger" disabled title="Supprimer la clé sélectionnée et tout son contenu">🗑️ Clé</button>
     </div>
     <div id="valuesBody" style="padding:6px">
       <div class="empty">Sélectionne une clé pour voir ses valeurs.</div>
@@ -480,62 +497,108 @@ function deleteCurrentKey() {
   }, 'Supprimer la clé ' + selectedPath);
 }
 
+var QUICK_OPS = [
+  { id: 'createKey',   icon: '📁', tone: 'green',  title: 'Créer une clé',           sub: 'Ajoute une clé de registre (dossier).' },
+  { id: 'writeValue',  icon: '📝', tone: 'blue',   title: 'Écrire une valeur',        sub: 'Crée ou modifie une valeur dans une clé.' },
+  { id: 'deleteValue', icon: '✂️', tone: 'orange', title: 'Supprimer une valeur',     sub: 'Retire UNE valeur d\'une clé.' },
+  { id: 'deleteKey',   icon: '🗑️', tone: 'red',    title: 'Supprimer une clé',        sub: 'Détruit la clé ET tout ce qu\'elle contient.' },
+];
+
 function openQuickAction() {
   var nIds = targetNodes().length;
   if (!nIds) return alert('Coche au moins un poste (ou click sur un poste actif).');
   var typeOpts = TYPES.map(function (t) { return '<option>' + t + '</option>'; }).join('');
+  var cards = QUICK_OPS.map(function (o) {
+    return '<div class="qaCard tone-' + o.tone + '" data-op="' + o.id + '">'
+         +   '<div class="qaIcon">' + o.icon + '</div>'
+         +   '<div><div class="qaTitle">' + o.title + '</div>'
+         +   '<div class="qaSub">' + o.sub + '</div></div>'
+         + '</div>';
+  }).join('');
   var bg = showModal([
-    '<h3>Action rapide — ' + nIds + ' poste' + (nIds > 1 ? 's' : '') + '</h3>',
-    '<label>Opération</label>',
-    '<select id="qaOp">',
-    '  <option value="createKey">Créer une clé</option>',
-    '  <option value="deleteKey">Supprimer une clé (récursif)</option>',
-    '  <option value="writeValue">Écrire une valeur</option>',
-    '  <option value="deleteValue">Supprimer une valeur</option>',
-    '</select>',
-    '<label>Chemin de clé</label>',
-    '<input id="qaPath" placeholder="ex: HKLM\\Software\\MonAppli">',
-    '<div id="qaValBlock">',
-    '  <label>Nom de la valeur</label>',
-    '  <input id="qaName" placeholder="(vide = valeur par défaut)">',
-    '  <div id="qaTypeBlock">',
-    '    <label>Type</label>',
-    '    <select id="qaType">' + typeOpts + '</select>',
-    '    <label id="qaDataLbl">Donnée</label>',
-    '    <textarea id="qaData"></textarea>',
+    '<h3>Action rapide <span style="font-weight:400;color:#666">— ' + nIds + ' poste' + (nIds > 1 ? 's' : '') + '</span></h3>',
+    '<div class="qaGrid">' + cards + '</div>',
+    '<div id="qaForm" style="display:none">',
+    '  <div id="qaSel" class="qaSel"></div>',
+    '  <label>Chemin de clé</label>',
+    '  <input id="qaPath" placeholder="ex: HKLM\\Software\\MonAppli">',
+    '  <div id="qaValBlock">',
+    '    <label>Nom de la valeur</label>',
+    '    <input id="qaName" placeholder="(vide = valeur par défaut)">',
+    '    <div id="qaTypeBlock">',
+    '      <label>Type</label>',
+    '      <select id="qaType">' + typeOpts + '</select>',
+    '      <label id="qaDataLbl">Donnée</label>',
+    '      <textarea id="qaData"></textarea>',
+    '    </div>',
+    '  </div>',
+    '  <div class="actions">',
+    '    <button id="qaBack">← Changer d\'action</button>',
+    '    <button id="qaCancel">Annuler</button>',
+    '    <button id="qaRun" class="qaRunBtn">Exécuter</button>',
     '  </div>',
     '</div>',
-    '<div class="actions">',
-    '  <button id="qaCancel">Annuler</button>',
-    '  <button id="qaRun">Exécuter</button>',
-    '</div>',
+    '<div id="qaCancelOnly" class="actions"><button id="qaCancel2">Annuler</button></div>',
   ].join(''));
-  var op = bg.querySelector('#qaOp');
-  var valBlock = bg.querySelector('#qaValBlock');
-  var typeBlock = bg.querySelector('#qaTypeBlock');
-  var refresh = function () {
-    var v = op.value;
-    valBlock.style.display = (v === 'createKey' || v === 'deleteKey') ? 'none' : '';
-    typeBlock.style.display = (v === 'writeValue') ? '' : 'none';
-  };
+
+  var selectedOp = null;
+  var form = bg.querySelector('#qaForm');
+  var grid = bg.querySelector('.qaGrid');
+  var cancelOnly = bg.querySelector('#qaCancelOnly');
+  var selBox = bg.querySelector('#qaSel');
   var qaType = bg.querySelector('#qaType');
   var qaLbl = bg.querySelector('#qaDataLbl');
-  var updateHint = function () {
+  var valBlock = bg.querySelector('#qaValBlock');
+  var typeBlock = bg.querySelector('#qaTypeBlock');
+  var runBtn = bg.querySelector('#qaRun');
+
+  function updateHint() {
     var t = qaType.value;
     if (t === 'DWord' || t === 'QWord') qaLbl.textContent = 'Donnée (entier)';
     else if (t === 'Binary') qaLbl.textContent = 'Donnée (hexa, ex: DE AD BE EF)';
     else if (t === 'MultiString') qaLbl.textContent = 'Donnée (une ligne = une entrée)';
     else qaLbl.textContent = 'Donnée';
+  }
+  qaType.onchange = updateHint;
+
+  function pickOp(op) {
+    selectedOp = op;
+    grid.style.display = 'none';
+    cancelOnly.style.display = 'none';
+    form.style.display = '';
+    selBox.className = 'qaSel tone-' + op.tone;
+    selBox.innerHTML = '<span style="font-size:18px">' + op.icon + '</span> <b>' + op.title + '</b>';
+    valBlock.style.display = (op.id === 'createKey' || op.id === 'deleteKey') ? 'none' : '';
+    typeBlock.style.display = (op.id === 'writeValue') ? '' : 'none';
+    runBtn.className = 'qaRunBtn tone-' + op.tone;
+    runBtn.textContent = op.icon + ' ' + op.title;
+    updateHint();
+  }
+
+  [].slice.call(bg.querySelectorAll('.qaCard')).forEach(function (card) {
+    card.onclick = function () {
+      var id = card.getAttribute('data-op');
+      pickOp(QUICK_OPS.find(function (x) { return x.id === id; }));
+    };
+  });
+  bg.querySelector('#qaBack').onclick = function () {
+    selectedOp = null;
+    form.style.display = 'none';
+    grid.style.display = '';
+    cancelOnly.style.display = '';
   };
-  op.onchange = refresh; qaType.onchange = updateHint; refresh(); updateHint();
   bg.querySelector('#qaCancel').onclick = function () { closeModal(bg); };
-  bg.querySelector('#qaRun').onclick = function () {
-    var action = op.value;
+  bg.querySelector('#qaCancel2').onclick = function () { closeModal(bg); };
+  runBtn.onclick = function () {
+    if (!selectedOp) return;
+    var action = selectedOp.id;
     var path = bg.querySelector('#qaPath').value.trim();
     if (!path) return alert('Chemin requis.');
     var name = bg.querySelector('#qaName').value;
     var type = qaType.value;
     var data = bg.querySelector('#qaData').value;
+    if (action === 'deleteKey' && !confirm('⚠️ Supprimer DÉFINITIVEMENT la clé\n\n' + path + '\n\net tout son contenu sur ' + nIds + ' poste' + (nIds > 1 ? 's' : '') + ' ?')) return;
+    if (action === 'deleteValue' && !name && !confirm('Supprimer la valeur "(par défaut)" de\n' + path + ' ?')) return;
     var label = ({
       createKey: 'Créer ' + path,
       deleteKey: 'Supprimer ' + path,
