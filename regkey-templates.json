@@ -1,0 +1,98 @@
+{
+  "_comment": "Bibliothèque de modèles de regkeys prêts à pousser. Modifiable à la main. Chaque template a une liste d'ops appliquées dans l'ordre sur chaque poste sélectionné.",
+  "categories": [
+    {
+      "name": "Edge",
+      "templates": [
+        {
+          "id": "edge-hide-first-run",
+          "name": "Masquer First-Run Edge",
+          "description": "Supprime la page d'accueil de bienvenue au premier lancement.",
+          "ops": [
+            { "op": "writeValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "HideFirstRunExperience", "type": "REG_DWORD", "data": "1" }
+          ]
+        },
+        {
+          "id": "edge-disable-default-prompt",
+          "name": "Désactiver invite navigateur par défaut",
+          "description": "Edge ne demande plus à être défini comme navigateur par défaut.",
+          "ops": [
+            { "op": "writeValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "DefaultBrowserSettingEnabled", "type": "REG_DWORD", "data": "0" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Explorer / Bureau",
+      "templates": [
+        {
+          "id": "explorer-show-file-ext",
+          "name": "Afficher les extensions de fichiers",
+          "description": "Affiche systématiquement les extensions (.exe, .pdf, etc).",
+          "ops": [
+            { "op": "writeValue", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "HideFileExt", "type": "REG_DWORD", "data": "0" }
+          ]
+        },
+        {
+          "id": "explorer-show-hidden",
+          "name": "Afficher les fichiers cachés",
+          "description": "Rend visibles les fichiers et dossiers cachés.",
+          "ops": [
+            { "op": "writeValue", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "Hidden", "type": "REG_DWORD", "data": "1" }
+          ]
+        },
+        {
+          "id": "explorer-disable-onedrive",
+          "name": "Désactiver l'intégration OneDrive",
+          "description": "Masque OneDrive dans l'Explorateur et bloque sa synchro.",
+          "ops": [
+            { "op": "writeValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\OneDrive", "name": "DisableFileSyncNGSC", "type": "REG_DWORD", "data": "1" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Confidentialité",
+      "templates": [
+        {
+          "id": "privacy-disable-telemetry",
+          "name": "Désactiver la télémétrie Windows",
+          "description": "Réduit au minimum la collecte de données diagnostiques.",
+          "ops": [
+            { "op": "writeValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection", "name": "AllowTelemetry", "type": "REG_DWORD", "data": "0" }
+          ]
+        },
+        {
+          "id": "privacy-disable-ads-id",
+          "name": "Désactiver l'ID de publicité",
+          "description": "Empêche les apps d'utiliser un identifiant pub par utilisateur.",
+          "ops": [
+            { "op": "writeValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AdvertisingInfo", "name": "DisabledByGroupPolicy", "type": "REG_DWORD", "data": "1" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Performance",
+      "templates": [
+        {
+          "id": "perf-disable-fast-startup",
+          "name": "Désactiver le démarrage rapide",
+          "description": "Force l'arrêt complet — utile pour le PXE/FOG.",
+          "ops": [
+            { "op": "writeValue", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power", "name": "HiberbootEnabled", "type": "REG_DWORD", "data": "0" }
+          ]
+        },
+        {
+          "id": "perf-disable-search-indexing-prompt",
+          "name": "Désactiver l'indexation des résultats web",
+          "description": "Cortana/recherche ne sollicite plus Bing.",
+          "ops": [
+            { "op": "writeValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search", "name": "DisableWebSearch", "type": "REG_DWORD", "data": "1" },
+            { "op": "writeValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search", "name": "ConnectedSearchUseWeb", "type": "REG_DWORD", "data": "0" }
+          ]
+        }
+      ]
+    }
+  ]
+}

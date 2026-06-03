@@ -85,6 +85,7 @@
   <span id="spinner">⟳</span>
   <span id="batchTag" class="batchTag" style="display:none"></span>
   <div class="grow"></div>
+  <button id="templatesBtn" style="font-weight:600" title="Appliquer un modèle de regkeys prédéfini sur les postes cochés">📚 Modèles</button>
   <button id="quickActionBtn" style="font-weight:600" title="Créer/écrire/supprimer à un chemin libre, sans naviguer">⚡ Action rapide</button>
   <button id="refreshAgents" title="Recharger la liste des postes">↻ Postes</button>
   <button id="refreshTree" title="Recharger l'arbre">↻ Arbre</button>
@@ -615,6 +616,96 @@ function openQuickAction() {
   };
 }
 $('quickActionBtn').onclick = openQuickAction;
+
+function openTemplates() {
+  var bg = showModal([
+    '<h3>📚 Modèles de regkeys</h3>',
+    '<div id="tplBody" style="max-height:60vh;overflow:auto"><div class="empty">Chargement…</div></div>',
+    '<div class="actions"><button id="tplClose">Fermer</button></div>',
+  ].join(''));
+  bg.querySelector('#tplClose').onclick = function () { closeModal(bg); };
+  api('templates').then(function (r) {
+    if (r.error) { bg.querySelector('#tplBody').innerHTML = '<div class="empty">' + escapeHtml(r.error) + '</div>'; return; }
+    var cats = (r.categories || []);
+    if (!cats.length) { bg.querySelector('#tplBody').innerHTML = '<div class="empty">Aucun modèle.</div>'; return; }
+    var html = '';
+    cats.forEach(function (c) {
+      html += '<div style="margin:10px 0 4px 0;font-weight:600;color:#333">' + escapeHtml(c.name) + '</div>';
+      (c.templates || []).forEach(function (t) {
+        html += '<div style="border:1px solid #e0e0e0;border-radius:4px;padding:8px;margin-bottom:6px;display:flex;gap:8px;align-items:flex-start">'
+              + '<div style="flex:1">'
+              + '  <div style="font-weight:500">' + escapeHtml(t.name) + '</div>'
+              + '  <div style="font-size:12px;color:#666;margin-top:2px">' + escapeHtml(t.description || '') + '</div>'
+              + '  <div style="font-size:11px;color:#999;margin-top:2px">' + (t.ops || []).length + ' opération(s)</div>'
+              + '</div>'
+              + '<button class="tplApply" data-id="' + escapeHtml(t.id) + '">Appliquer</button>'
+              + '</div>';
+      });
+    });
+    var body = bg.querySelector('#tplBody');
+    body.innerHTML = html;
+    var index = {};
+    cats.forEach(function (c) { (c.templates || []).forEach(function (t) { index[t.id] = t; }); });
+    Array.prototype.forEach.call(body.querySelectorAll('.tplApply'), function (btn) {
+      btn.onclick = function () {
+        var tpl = index[btn.getAttribute('data-id')];
+        if (!tpl) return;
+        closeModal(bg);
+        applyTemplate(tpl);
+      };
+    });
+  });
+}
+
+function applyTemplate(tpl) {
+  var ids = targetNodes();
+  if (!ids.length) return alert('Aucun poste cible.');
+  if (!confirm('Appliquer "' + tpl.name + '" sur ' + ids.length + ' poste(s) ?\n\n' + (tpl.ops || []).length + ' opération(s) par poste.')) return;
+  var bg = showModal([
+    '<h3>Application : ' + escapeHtml(tpl.name) + ' — ' + ids.length + ' poste' + (ids.length > 1 ? 's' : '') + '</h3>',
+    '<div id="bRes" class="batchResults"></div>',
+    '<div class="actions"><button id="bClose" disabled>Fermer</button></div>',
+  ].join(''));
+  var resBox = bg.querySelector('#bRes');
+  var btnClose = bg.querySelector('#bClose');
+  btnClose.onclick = function () { closeModal(bg); };
+  var nameById = {};
+  agents.forEach(function (a) { nameById[a.id] = a.name; });
+  var i = 0, okN = 0, koN = 0;
+  function next() {
+    if (i >= ids.length) {
+      resBox.innerHTML += '\n<div><b>Terminé : ' + okN + ' OK, ' + koN + ' KO</b></div>';
+      btnClose.disabled = false;
+      return;
+    }
+    var id = ids[i++];
+    resBox.innerHTML += '<div>• ' + escapeHtml(nameById[id] || id) + ' … </div>';
+    resBox.scrollTop = resBox.scrollHeight;
+    var line = resBox.lastChild;
+    var ops = (tpl.ops || []).slice();
+    var failed = false;
+    function nextOp() {
+      if (failed || !ops.length) {
+        if (failed) { koN++; } else { okN++; line.innerHTML += '<span class="ok">OK</span>'; }
+        return next();
+      }
+      var op = ops.shift();
+      var body = { nodeId: id, path: op.path };
+      if (op.name !== undefined) body.name = op.name;
+      if (op.type !== undefined) body.type = op.type;
+      if (op.data !== undefined) body.data = op.data;
+      callAgent(op.op, body).then(nextOp).catch(function (e) {
+        failed = true;
+        line.innerHTML += '<span class="ko">KO — ' + escapeHtml(op.op + ': ' + e.message) + '</span>';
+        next();
+      });
+    }
+    nextOp();
+  }
+  next();
+}
+
+$('templatesBtn').onclick = openTemplates;
 $('refreshTree').onclick = function () { if (activeNodeId) renderRoots(); };
 $('newValBtn').onclick = function () { if (selectedPath) editValue('', null); };
 $('newKeyBtn').onclick = function () { if (selectedPath) createKey(); };

@@ -62,6 +62,19 @@ module.exports.regctl = function (parent) {
 
         if (action === 'ping') return sendJson(res, 200, { ok: true, plugin: 'regctl' });
 
+        if (action === 'templates') {
+            // Bibliothèque de modèles de regkeys (regkey-templates.json à la
+            // racine du plugin). Lu à chaque appel pour permettre l'édition
+            // sans restart du serveur.
+            try {
+                const tplPath = path.join(__dirname, 'regkey-templates.json');
+                const raw = require('fs').readFileSync(tplPath, 'utf8');
+                return sendJson(res, 200, JSON.parse(raw));
+            } catch (e) {
+                return sendJson(res, 500, { error: 'regkey-templates.json invalide: ' + e.message });
+            }
+        }
+
         if (action === 'agents') {
             // Liste des agents Windows connectés (registre = Windows uniquement).
             const db = obj.meshServer.db;
